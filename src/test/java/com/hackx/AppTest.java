@@ -1,4 +1,4 @@
-package org.hackx;
+package com.hackx;
 
 import junit.framework.Test;
 import junit.framework.TestCase;

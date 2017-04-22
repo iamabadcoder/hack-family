@@ -1,4 +1,4 @@
-package org.hackx;
+package com.hackx;
 
 /**
  * Hello world!
