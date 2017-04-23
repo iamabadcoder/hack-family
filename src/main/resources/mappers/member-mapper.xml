@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.hackx.web.mapper.MemberMapper">
+
+    <resultMap id="MemberDOResult" type="MemberDO">
+        <result property="id" column="id"/>
+        <result property="gmtCreate" column="gmt_create"/>
+        <result property="gmtModified" column="gmt_modified"/>
+        <result property="name" column="name"/>
+        <result property="age" column="age"/>
+        <result property="email" column="email"/>
+        <result property="password" column="password"/>
+    </resultMap>
+
+    <sql id="MemberDOFields">
+        id, gmt_create, gmt_modified, name, age, email, password
+    </sql>
+
+    <!-- id必须与Mapper中对应的方法的名称一致 -->
+    <select id="queryById" resultMap="MemberDOResult" parameterType="java.lang.Long">
+        SELECT
+        <include refid="MemberDOFields"/>
+        FROM member
+        WHERE id=#{id}
+    </select>
+</mapper>
