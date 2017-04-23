@@ -86,6 +86,13 @@
             <version>0.10.2.0</version>
         </dependency>
 
+        <!-- kryo Dependency -->
+        <dependency>
+            <groupId>com.esotericsoftware</groupId>
+            <artifactId>kryo</artifactId>
+            <version>4.0.0</version>
+        </dependency>
+
     </dependencies>
     <build>
         <plugins>
