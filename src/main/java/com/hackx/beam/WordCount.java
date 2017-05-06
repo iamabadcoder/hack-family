@@ -2,69 +2,124 @@ package com.hackx.beam;
 
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.io.TextIO;
+import org.apache.beam.sdk.metrics.Counter;
+import org.apache.beam.sdk.metrics.Metrics;
+import org.apache.beam.sdk.options.Default;
+import org.apache.beam.sdk.options.Description;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
+import org.apache.beam.sdk.options.Validation.Required;
 import org.apache.beam.sdk.transforms.*;
 import org.apache.beam.sdk.values.KV;
+import org.apache.beam.sdk.values.PCollection;
 
 public class WordCount {
 
     public static void main(String[] args) {
-        // Create a PipelineOptions object. This object lets us set various execution
-        // options for our pipeline, such as the runner you wish to use. This example
-        // will run with the DirectRunner by default, based on the class path configured
-        // in its dependencies.
-        PipelineOptions options = PipelineOptionsFactory.create();
-
-        // Create the Pipeline object with the options we defined above.
+        WordCountOptions options = PipelineOptionsFactory.fromArgs(args).withValidation()
+                .as(WordCountOptions.class);
         Pipeline p = Pipeline.create(options);
 
-        // Apply the pipeline's transforms.
+        // Concepts #2 and #3: Our pipeline applies the composite CountWords transform, and passes the
+        // static FormatAsTextFn() to the ParDo transform.
+        p.apply("ReadLines", TextIO.Read.from(options.getInputFile()))
+                .apply(new CountWords())
+                .apply(MapElements.via(new FormatAsTextFn()))
+                .apply("WriteCounts", TextIO.Write.to(options.getOutput()));
 
-        // Concept #1: Apply a root transform to the pipeline; in this case, TextIO.Read to read a set
-        // of input text files. TextIO.Read returns a PCollection where each element is one line from
-        // the input text (a set of Shakespeare's texts).
-
-        // This example reads a public data set consisting of the complete works of Shakespeare.
-        p.apply(TextIO.Read.from("/Users/caolei/WorkSpace/hack-family/input/beam_overview.md"))
-
-                // Concept #2: Apply a ParDo transform to our PCollection of text lines. This ParDo invokes a
-                // DoFn (defined in-line) on each element that tokenizes the text line into individual words.
-                // The ParDo returns a PCollection<String>, where each element is an individual word in
-                // Shakespeare's collected texts.
-                .apply("ExtractWords", ParDo.of(new DoFn<String, String>() {
-                    @ProcessElement
-                    public void processElement(ProcessContext c) {
-                        for (String word : c.element().split("[^a-zA-Z']+")) {
-                            if (!word.isEmpty()) {
-                                c.output(word);
-                            }
-                        }
-                    }
-                }))
-
-                // Concept #3: Apply the Count transform to our PCollection of individual words. The Count
-                // transform returns a new PCollection of key/value pairs, where each key represents a unique
-                // word in the text. The associated value is the occurrence count for that word.
-                .apply(Count.<String>perElement())
-
-                // Apply a MapElements transform that formats our PCollection of word counts into a printable
-                // string, suitable for writing to an output file.
-                .apply("FormatResults", MapElements.via(new SimpleFunction<KV<String, Long>, String>() {
-                    @Override
-                    public String apply(KV<String, Long> input) {
-                        return input.getKey() + ": " + input.getValue();
-                    }
-                }))
-
-                // Concept #4: Apply a write transform, TextIO.Write, at the end of the pipeline.
-                // TextIO.Write writes the contents of a PCollection (in this case, our PCollection of
-                // formatted strings) to a series of text files.
-                //
-                // By default, it will write to a set of files with names like wordcount-00001-of-00005
-                .apply(TextIO.Write.to("/Users/caolei/WorkSpace/hack-family/output/wordcounts"));
-
-        // Run the pipeline.
         p.run().waitUntilFinish();
     }
+
+    /**
+     * Options supported by {@link WordCount}.
+     * <p>
+     * <p>Concept #4: Defining your own configuration options. Here, you can add your own arguments
+     * to be processed by the command-line parser, and specify default values for them. You can then
+     * access the options values in your pipeline code.
+     * <p>
+     * <p>Inherits standard configuration options.
+     */
+    public interface WordCountOptions extends PipelineOptions {
+
+        /**
+         * By default, this example reads from a public dataset containing the text of
+         * King Lear. Set this option to choose a different input file or glob.
+         */
+        @Description("Path of the file to read from")
+        @Default.String("gs://apache-beam-samples/shakespeare/kinglear.txt")
+        String getInputFile();
+
+        void setInputFile(String value);
+
+        /**
+         * Set this required option to specify where to write the output.
+         */
+        @Description("Path of the file to write to")
+        @Required
+        String getOutput();
+
+        void setOutput(String value);
+    }
+
+    /**
+     * Concept #2: You can make your pipeline assembly code less verbose by defining your DoFns
+     * statically out-of-line. This DoFn tokenizes lines of text into individual words; we pass it
+     * to a ParDo in the pipeline.
+     */
+    static class ExtractWordsFn extends DoFn<String, String> {
+        private final Counter emptyLines = Metrics.counter(ExtractWordsFn.class, "emptyLines");
+
+        @ProcessElement
+        public void processElement(ProcessContext c) {
+            if (c.element().trim().isEmpty()) {
+                emptyLines.inc();
+            }
+
+            // Split the line into words.
+            String[] words = c.element().split("[^A-Za-z]+");
+
+            // Output each word encountered into the output PCollection.
+            for (String word : words) {
+                if (!word.isEmpty()) {
+                    c.output(word);
+                }
+            }
+        }
+    }
+
+    /**
+     * A SimpleFunction that converts a Word and Count into a printable string.
+     */
+    public static class FormatAsTextFn extends SimpleFunction<KV<String, Long>, String> {
+        @Override
+        public String apply(KV<String, Long> input) {
+            return input.getKey() + ": " + input.getValue();
+        }
+    }
+
+    /**
+     * A PTransform that converts a PCollection containing lines of text into a PCollection of
+     * formatted word counts.
+     * <p>
+     * <p>Concept #3: This is a custom composite transform that bundles two transforms (ParDo and
+     * Count) as a reusable PTransform subclass. Using composite transforms allows for easy reuse,
+     * modular testing, and an improved monitoring experience.
+     */
+    public static class CountWords extends PTransform<PCollection<String>,
+            PCollection<KV<String, Long>>> {
+        @Override
+        public PCollection<KV<String, Long>> expand(PCollection<String> lines) {
+
+            // Convert lines of text into individual words.
+            PCollection<String> words = lines.apply(
+                    ParDo.of(new ExtractWordsFn()));
+
+            // Count the number of times each word occurs.
+            PCollection<KV<String, Long>> wordCounts =
+                    words.apply(Count.<String>perElement());
+
+            return wordCounts;
+        }
+    }
+
 }
