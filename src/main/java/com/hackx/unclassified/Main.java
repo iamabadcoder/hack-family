@@ -7,7 +7,8 @@ public class Main {
 //        ClassManipulator.saveClassFile(simpleTask);
 
         ClassLoader fileClassLoader = new FileClassLoader();
-        Task task = (Task) FileSerializer.readObjectFromFile("task.ser", fileClassLoader);
-        task.run();
+        Task simpleTask = (Task) FileSerializer.readObjectFromFile("task.ser", fileClassLoader);
+        simpleTask.run();
+        System.out.printf(simpleTask.superStr);
     }
 }
